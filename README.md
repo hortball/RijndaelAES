@@ -8,3 +8,5 @@
 支持填充方式：无填充、PKCS#5和ISO 10126
 
 支持加解密模式：ECB、CBC、CFB和OFB
+
+**Visual Studio 2015的项目**
