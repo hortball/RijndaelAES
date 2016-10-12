@@ -187,6 +187,13 @@ static const INT Rcon[] = {
 
 StdAES::StdAES(INT keyMode, INT AESMode, INT padding) :mExpansionTable(NULL) {
 	mKeyLength = keyMode;
+	mKeyColumn = mKeyLength / 4;
+	mRounds = mKeyColumn + 6;
+	mExpansionTableLength = (mRounds + 1) * mKeyColumn;
+
+	// 开辟扩展表内存
+	mExpansionTable = new DWORD32[mExpansionTableLength];
+
 	mMode = AESMode;
 	mPadding = padding;
 }
@@ -200,8 +207,8 @@ StdAES::~StdAES() {
 // 设置AES加解密的密钥
 ////////////////////////////////////////////////
 void StdAES::setKey(AesBytes* key) {
-	mKeyColumn = mKeyLength / 4;
-	mRounds = mKeyColumn + 6;
+	// 将原始密钥拷贝到密钥扩展表中
+	memcpy(mExpansionTable, key, mKeyLength);
 	keyExpansion((PDWORD32) key->bytes);
 }
 
@@ -379,18 +386,7 @@ void StdAES::invCipher(LPBYTE data) {
 // 扩展后的密钥表长度为(密钥长度) + (密钥长度) * 轮数
 // 例如输入的密钥是16字节，则扩展后的密钥表为16+16*10=176字节
 ///////////////////////////////////////////////
-void StdAES::keyExpansion(PDWORD32 key) {
-	// 释放扩展表内存
-	if(mExpansionTable) delete[] mExpansionTable;
-
-	mExpansionTableLength = (mRounds + 1) * mKeyColumn;
-	// 开辟扩展表内存
-
-	mExpansionTable = new DWORD32[mExpansionTableLength];
-
-	// 将原始密钥拷贝到密钥扩展表中
-	memcpy(mExpansionTable, key, mKeyLength);
-
+void StdAES::keyExpansion(PDWORD32 key) {                      
 	// 进行扩展密钥
 	for(INT i = mKeyColumn; i < mExpansionTableLength; i++) {
 		mExpansionTable[i] = mExpansionTable[i - 1];
