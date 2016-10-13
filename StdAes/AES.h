@@ -1,6 +1,9 @@
 #pragma once
 
 #include <Windows.h>
+#include "IntelAES.h"
+
+//#include "emmintrin.h"
 //////////////////////////////////////
 // 电子密码本模式
 // 用相同的密钥分别对明文分组加密
@@ -32,9 +35,8 @@
 //////////////////////////////////////
 #define STDAES_MODE_CTR   4
 
-#define STDAES_PADDING_NO        0
-#define STDAES_PADDING_PKCS5     1
-#define STDAES_PADDING_ISO10126  2
+#define STDAES_PADDING_PKCS5     0
+#define STDAES_PADDING_ISO10126  1
 
 
 ////////////////////////////////////////////////////////////////////////////
@@ -60,11 +62,6 @@
 #define STDAES_KEY_192BIT 24
 #define STDAES_KEY_256BIT 32
 
-struct AesBytes {
-	INT length;
-	LPBYTE bytes;
-};
-
 class StdAES {
 public:
 	StdAES(INT keyMode, INT AESMode, INT padding);
@@ -77,29 +74,33 @@ private:
 	INT mMode;
 	INT mPadding;
 	INT mExpansionTableLength;
-	DWORD32* mExpansionTable;
+	/*__declspec(align(16)) */PDWORD32 mExpansionTable;
 
 public:
-	void setKey(AesBytes* key);
+	void setKey(LPBYTE key);
+
+	INT getBufferLen(INT dataLen);
+	void padding(LPBYTE buffer, INT buffLen, LPBYTE data, INT dataLen);
+	void deletePadding(LPBYTE buffer, LPINT buffLen);
 
 	////////////////////////////////////////////////
 	// 缓冲区大小必须使用getBufferLen函数获得
 	// 不合法的缓冲区大小将造成缓冲区溢出！
 	////////////////////////////////////////////////
-	void encrypt(LPBYTE buffer, INT buffLen, LPINT dataLen, LPBYTE iv);
+	void encrypt(LPBYTE buffer, INT buffLen);
+	void encrypt(LPBYTE buffer, INT buffLen, LPBYTE iv);
 
 	////////////////////////////////////////////////
 	// 该函数不能确保解密后的数据是正确的，
 	// 比如输入的数据是非AES算法加密的，或其他不合法数据
 	// 请确保传入数据的合法性
 	////////////////////////////////////////////////
-	BOOL decrypt(LPBYTE data, PINT dataLen, LPBYTE iv);
+	void decrypt(LPBYTE data, INT dataLen, LPBYTE iv);
 
-	INT getBufferLen(INT dataLen);
 
 private:
 	//StdAES();
-
+	//void encrypt(LPBYTE buffer, INT buffLen, LPBYTE iv);
 	void keyExpansion(PDWORD32 key);
 
 	void subWord(LPBYTE c);
@@ -116,3 +117,4 @@ private:
 	void invCipher(LPBYTE data);
 };
 
+BOOL Check_CPU_support_AES();

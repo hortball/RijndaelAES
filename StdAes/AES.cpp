@@ -1,8 +1,9 @@
-#include "AES.h"
+ï»¿#include "AES.h"
+
 
 /////////////////////////////////////////////////////////
-// sBoxÖÃ»»±í
-// ÓÃÌØ¶¨Ëã·¨Éú³ÉµÄÒ»ÕÅÖÃ»»16x16±í¸ñ£¬¼ÓÃÜÊ±ÓÃ
+// sBoxç½®æ¢è¡¨
+// ç”¨ç‰¹å®šç®—æ³•ç”Ÿæˆçš„ä¸€å¼ ç½®æ¢16x16è¡¨æ ¼ï¼ŒåŠ å¯†æ—¶ç”¨
 /////////////////////////////////////////////////////////
 static const BYTE sBox[] = {
 	/*     0     1     2     3     4     5     6     7     8     9     A     B     C     D     E     F   */
@@ -25,8 +26,8 @@ static const BYTE sBox[] = {
 };
 
 /////////////////////////////////////////////////////////
-// ÄæsBoxÖÃ»»±í
-// ½âÃÜÊ±ÓÃ
+// é€†sBoxç½®æ¢è¡¨
+// è§£å¯†æ—¶ç”¨
 /////////////////////////////////////////////////////////
 static const BYTE invSBox[] = {
 	/*     0     1     2     3     4     5     6     7     8     9     A     B     C     D     E     F   */
@@ -49,10 +50,10 @@ static const BYTE invSBox[] = {
 };
 
 //////////////////////////////////////////////////////////
-// GF(2^8)ÖÃ»»±í
-// ÎªÁËÌá¸ß¼ÆËãËÙ¶È£¬½«GFÓòÄÚµÄËùÓĞÖµÔ¤ÏÈ¼ÆËã³öÀ´¡£
-// ÓÃµÄÊ±ºòÖ±½Ó²é±íµÃµ½½á¹û£¬¶ø²»ĞèÒª¼ÆËã¡£
-// Ëã·¨Çë¼û¾ßÌåº¯Êı
+// GF(2^8)ç½®æ¢è¡¨
+// ä¸ºäº†æé«˜è®¡ç®—é€Ÿåº¦ï¼Œå°†GFåŸŸå†…çš„æ‰€æœ‰å€¼é¢„å…ˆè®¡ç®—å‡ºæ¥ã€‚
+// ç”¨çš„æ—¶å€™ç›´æ¥æŸ¥è¡¨å¾—åˆ°ç»“æœï¼Œè€Œä¸éœ€è¦è®¡ç®—ã€‚
+// ç®—æ³•è¯·è§å…·ä½“å‡½æ•°
 //////////////////////////////////////////////////////////
 static const BYTE gf02[] = {
 	/*     0     1     2     3     4     5     6     7     8     9     A     B     C     D     E     F   */
@@ -175,223 +176,72 @@ static const BYTE gf0e[] = {
 };
 
 //////////////////////////////////////////////////////////
-// ÂÖ³£Á¿
-// ÔÚÀ©Õ¹ÃÜÔ¿ÖĞÊ¹ÓÃµÄ³£Á¿
+// è½®å¸¸é‡
+// åœ¨æ‰©å±•å¯†é’¥ä¸­ä½¿ç”¨çš„å¸¸é‡
 //////////////////////////////////////////////////////////
 static const INT Rcon[] = {
-	0x01, 0x02, 0x04, 0x08, 0x10, 0x20, 0x40, 0x80, 0x1B, 0x36, 0x6C, 0xD8, 0xAB, 0x4D/*, 0x9A, 0x2F, 0x5E*/
+	0x01, 0x02, 0x04, 0x08, 0x10, 0x20, 0x40, 0x80, 0x1B, 0x36, 0x6C, 0xD8, 0xAB, 0x4D
 };
 
-// AESµÄ¿é´óĞ¡¹Ì¶¨Îª16×Ö½Ú£¬²»ÔÊĞí¸Ä±ä£¡
+// AESçš„å—å¤§å°å›ºå®šä¸º16å­—èŠ‚ï¼Œä¸å…è®¸æ”¹å˜ï¼
 #define BLOCK_LENGTH 16
 
+BOOL AESNI = FALSE;
+
 StdAES::StdAES(INT keyMode, INT AESMode, INT padding) :mExpansionTable(NULL) {
+	AESNI = CheckAESNI();
 	mKeyLength = keyMode;
 	mKeyColumn = mKeyLength / 4;
 	mRounds = mKeyColumn + 6;
 	mExpansionTableLength = (mRounds + 1) * mKeyColumn;
 
-	// ¿ª±ÙÀ©Õ¹±íÄÚ´æ
-	mExpansionTable = new DWORD32[mExpansionTableLength];
+	if(AESNI) {
+		mExpansionTable = (/*__declspec(align(16)) */PDWORD32) _mm_malloc(sizeof(PDWORD32)*mExpansionTableLength, 16);
+	} else {
+		mExpansionTable = new DWORD32[mExpansionTableLength];
+	}
 
 	mMode = AESMode;
 	mPadding = padding;
 }
 
 StdAES::~StdAES() {
-	// ÊÍ·ÅÀ©Õ¹±íÄÚ´æ
-	delete[] mExpansionTable;
+	if(AESNI) {
+		_mm_free(mExpansionTable);
+	} else {
+		delete[] mExpansionTable;
+	}
 }
 
 ////////////////////////////////////////////////
-// ÉèÖÃAES¼Ó½âÃÜµÄÃÜÔ¿
+// è®¾ç½®AESåŠ è§£å¯†çš„å¯†é’¥
 ////////////////////////////////////////////////
-void StdAES::setKey(AesBytes* key) {
-	// ½«Ô­Ê¼ÃÜÔ¿¿½±´µ½ÃÜÔ¿À©Õ¹±íÖĞ
+void StdAES::setKey(LPBYTE key) {
+	if(AESNI) {
+		if(mKeyLength == STDAES_KEY_128BIT) {
+			AES_128_Key_Expansion((PDWORD32) key, mExpansionTable);
+		} else if(mKeyLength == STDAES_KEY_192BIT) {
+			AES_192_Key_Expansion((PDWORD32) key, mExpansionTable);
+		} else {
+			AES_256_Key_Expansion((PDWORD32) key, mExpansionTable);
+		}
+	} else {
+		keyExpansion((PDWORD32) key);
+	}
+}
+
+///////////////////////////////////////////////
+// å¯†é’¥æ‰©å±•
+// æ‰©å±•åçš„å¯†é’¥è¡¨é•¿åº¦ä¸º(å¯†é’¥é•¿åº¦) + (å¯†é’¥é•¿åº¦) * è½®æ•°
+// ä¾‹å¦‚è¾“å…¥çš„å¯†é’¥æ˜¯16å­—èŠ‚ï¼Œåˆ™æ‰©å±•åçš„å¯†é’¥è¡¨ä¸º16+16*10=176å­—èŠ‚
+///////////////////////////////////////////////
+void StdAES::keyExpansion(PDWORD32 key) {
+	// å°†åŸå§‹å¯†é’¥æ‹·è´åˆ°å¯†é’¥æ‰©å±•è¡¨ä¸­
 	memcpy(mExpansionTable, key, mKeyLength);
-	keyExpansion((PDWORD32) key->bytes);
-}
-
-/////////////////////////////////////////////////
-// È¡µÃ´øÌî³äµÄÊı¾İ³¤¶È£¬ÓÃÓÚÉèÖÃ»º³åÇø´óĞ¡
-/////////////////////////////////////////////////
-INT StdAES::getBufferLen(INT dataLen) {
-	switch(mPadding) {
-		case STDAES_PADDING_NO:
-			return dataLen;
-		case STDAES_PADDING_PKCS5:
-		case STDAES_PADDING_ISO10126:
-			return (((INT) (dataLen / BLOCK_LENGTH) + 1) * BLOCK_LENGTH);
-		default:
-			return dataLen;
-	}
-}
-
-inline void blockXor(LPBYTE data, INT dataLen, LPBYTE _xor) {
-	for(INT i = 0; i < dataLen; i++) {
-		data[i] ^= _xor[i];
-	}
-}
-
-/////////////////////////////////////////////////////
-// AES¼ÓÃÜº¯Êı
-// ¼ÓÃÜÒ»¶ÎÊı¾İ
-/////////////////////////////////////////////////////
-void StdAES::encrypt(LPBYTE buffer, INT buffLen, LPINT dataLen, LPBYTE IV) {
-	switch(mPadding) {
-		case STDAES_PADDING_NO:
-			break;
-		case STDAES_PADDING_PKCS5: {
-			UINT paddingLen = buffLen - *dataLen;
-			memset(&buffer[*dataLen], paddingLen, paddingLen);
-			break;
-		}
-		case STDAES_PADDING_ISO10126:
-			buffer[buffLen - 1] = buffLen - *dataLen;
-			break;
-		default:
-			break;
-	}
-
-	switch(mMode) {
-		case STDAES_MODE_ECB:
-			for(INT i = 0; i < buffLen; i += BLOCK_LENGTH) {
-				cipher(&buffer[i]);
-			}
-			break;
-		case STDAES_MODE_CBC:
-			for(INT i = 0; i < buffLen; i += BLOCK_LENGTH) {
-				blockXor(&buffer[i], BLOCK_LENGTH, IV);
-				cipher(&buffer[i]);
-
-				// ¼ÓÃÜºóµÄÊı¾İ×÷ÎªÏÂÒ»´ÎµÄIV
-				memcpy(IV, &buffer[i], BLOCK_LENGTH);
-			}
-			break;
-		case STDAES_MODE_CFB: {
-			for(INT i = 0; i < buffLen; i += BLOCK_LENGTH) {
-				cipher(IV);
-				if(i + BLOCK_LENGTH > buffLen) {
-					blockXor(&buffer[i], buffLen % BLOCK_LENGTH, IV);
-				} else {
-					blockXor(&buffer[i], BLOCK_LENGTH, IV);
-				}
-
-				// ¼ÓÃÜºóµÄÊı¾İ×÷ÎªÏÂÒ»´ÎµÄIV
-				memcpy(IV, &buffer[i], BLOCK_LENGTH); 
-			}
-			break;
-		}
-		case STDAES_MODE_OFB: {
-			for(INT i = 0; i < buffLen; i += BLOCK_LENGTH) {
-				cipher(IV);
-				if(i + BLOCK_LENGTH > buffLen) {
-					blockXor(&buffer[i], buffLen % BLOCK_LENGTH, IV);
-				} else {
-					blockXor(&buffer[i], BLOCK_LENGTH, IV);
-				}
-			}
-			break;
-		}
-		default:
-			break;
-	}
-	*dataLen = buffLen;
-}
-
-/////////////////////////////////////////////////////
-// AES½âÃÜº¯Êı
-// ½âÃÜÒ»¶ÎÊı¾İ
-/////////////////////////////////////////////////////
-BOOL StdAES::decrypt(LPBYTE data, PINT dataLen, LPBYTE iv) {
-	switch(mMode) {
-		case STDAES_MODE_ECB:
-			for(INT i = 0; i < *dataLen; i += BLOCK_LENGTH) {
-				invCipher(&data[i]);
-			}
-			break;
-		case STDAES_MODE_CBC: {
-			BYTE bac[BLOCK_LENGTH];
-			for(INT i = 0; i < *dataLen; i += BLOCK_LENGTH) {
-				memcpy(bac, &data[i], BLOCK_LENGTH);
-				invCipher(&data[i]);
-				blockXor(&data[i], BLOCK_LENGTH, iv);
-				memcpy(iv, bac, BLOCK_LENGTH);
-			}
-			break;
-		}
-		case STDAES_MODE_CFB: {
-			BYTE bac[BLOCK_LENGTH];
-			for(INT i = 0; i < *dataLen; i += BLOCK_LENGTH) {
-				memcpy(bac, &data[i], BLOCK_LENGTH);
-				cipher(iv);
-				blockXor(&data[i], BLOCK_LENGTH, iv);
-				memcpy(iv, bac, BLOCK_LENGTH);
-			}
-			break;
-		}
-		case STDAES_MODE_OFB:
-			encrypt(data, *dataLen, dataLen, iv);
-			break;
-		default:
-			break;
-	}
-	switch(mPadding) {
-		case STDAES_PADDING_NO:
-			break;
-		case STDAES_PADDING_PKCS5:
-		case STDAES_PADDING_ISO10126:
-			*dataLen = *dataLen - data[*dataLen - 1];
-			break;
-		default:
-			break;
-	}
-	return *dataLen > 0;
-}
-
-/////////////////////////////////////////////////////
-// AESÊı¾İ¿é¼ÓÃÜº¯Êı
-// ¼ÓÃÜÒ»¸öÊı¾İ¿é
-/////////////////////////////////////////////////////
-void StdAES::cipher(LPBYTE data) {
-	addRoundKey((PDWORD32) data, 0);
-
-	for(INT i = 1; i < mRounds; i++) {
-		subBytes_ShiftRows_MixColumns(data);
-		addRoundKey((PDWORD32) data, i);
-	}
-
-	subBytes_ShiftRows(data);
-	addRoundKey((PDWORD32) data, mRounds);
-}
-
-/////////////////////////////////////////////////////
-// AESÊı¾İ¿é½âÃÜº¯Êı
-// ½âÃÜÒ»¸öÊı¾İ¿é
-/////////////////////////////////////////////////////
-void StdAES::invCipher(LPBYTE data) {
-	addRoundKey((PDWORD32) data, mRounds);
-	invSubBytes_ShiftRows(data);
-
-	for(INT i = mRounds - 1; i > 0; i--) {
-		addRoundKey((PDWORD32) data, i);
-		invSubBytes_ShiftRows_MixColumns(data);
-	}
-
-	addRoundKey((PDWORD32) data, 0);
-}
-
-///////////////////////////////////////////////
-// ÃÜÔ¿À©Õ¹
-// À©Õ¹ºóµÄÃÜÔ¿±í³¤¶ÈÎª(ÃÜÔ¿³¤¶È) + (ÃÜÔ¿³¤¶È) * ÂÖÊı
-// ÀıÈçÊäÈëµÄÃÜÔ¿ÊÇ16×Ö½Ú£¬ÔòÀ©Õ¹ºóµÄÃÜÔ¿±íÎª16+16*10=176×Ö½Ú
-///////////////////////////////////////////////
-void StdAES::keyExpansion(PDWORD32 key) {                      
-	// ½øĞĞÀ©Õ¹ÃÜÔ¿
 	for(INT i = mKeyColumn; i < mExpansionTableLength; i++) {
 		mExpansionTable[i] = mExpansionTable[i - 1];
-		if(i  % mKeyColumn == 0) { // Ã¿×éÃÜÔ¿µÄµÚÒ»¸ö×Ö
-			mExpansionTable[i] = ((mExpansionTable[i] & 0x000000FF) << 24) | (mExpansionTable[i] >> 8);
+		if(i  % mKeyColumn == 0) { // æ¯ç»„å¯†é’¥çš„ç¬¬ä¸€ä¸ªWORD
+			mExpansionTable[i] = ((mExpansionTable[i]) << 24) | (mExpansionTable[i] >> 8);
 			subWord((LPBYTE) &mExpansionTable[i]);
 			mExpansionTable[i] ^= Rcon[i / mKeyColumn - 1];
 		} else if(mKeyLength == STDAES_KEY_256BIT && (i % 4 == 0)) {
@@ -401,8 +251,179 @@ void StdAES::keyExpansion(PDWORD32 key) {
 	}
 }
 
+/////////////////////////////////////////////////
+// å–å¾—å¸¦å¡«å……çš„æ•°æ®é•¿åº¦ï¼Œç”¨äºè®¾ç½®ç¼“å†²åŒºå¤§å°
+/////////////////////////////////////////////////
+INT StdAES::getBufferLen(INT dataLen) {
+	switch(mPadding) {
+		case STDAES_PADDING_PKCS5:
+		case STDAES_PADDING_ISO10126:
+			return (((INT) (dataLen / BLOCK_LENGTH) + 1) * BLOCK_LENGTH);
+		default:
+			return dataLen;
+	}
+}
+
+inline void blockXor(PDWORD32 data, PDWORD32 _xor) {
+	for(INT i = 0; i < BLOCK_LENGTH / sizeof(DWORD32); i++) {
+		data[i] ^= _xor[i];
+	}
+
+	//_mm_storeu_si128((__m128i*)data, _mm_xor_si128(*((__m128i*)data), *((__m128i*)_xor)));
+}
+
+void StdAES::padding(LPBYTE buffer, INT buffLen, LPBYTE data, INT dataLen) {
+	memcpy(buffer, data, dataLen);
+	switch(mPadding) {
+		case STDAES_PADDING_PKCS5: {
+			UINT paddingLen = buffLen - dataLen;
+			memset(&buffer[dataLen], paddingLen, paddingLen);
+			break;
+		}
+		case STDAES_PADDING_ISO10126:
+			buffer[buffLen - 1] = buffLen - dataLen;
+			break;
+		default:
+			break;
+	}
+}
+
+void StdAES::deletePadding(LPBYTE buffer, LPINT buffLen) {
+	switch(mPadding) {
+		case STDAES_PADDING_PKCS5:
+		case STDAES_PADDING_ISO10126:
+			*buffLen = *buffLen - buffer[*buffLen - 1];
+			break;
+		default:
+			break;
+	}
+}
+
+void StdAES::encrypt(LPBYTE buffer, INT buffLen) {
+	encrypt(buffer, buffLen, nullptr);
+}
+
+
+void StdAES::encrypt(LPBYTE buffer, INT buffLen, LPBYTE IV) {
+	BYTE myiv[16];
+	switch(mMode) {
+		case STDAES_MODE_ECB:
+			for(INT i = 0; i < buffLen; i += BLOCK_LENGTH) {
+				cipher(&buffer[i]);
+			}
+			break;
+		case STDAES_MODE_CBC:
+			memcpy(myiv, IV, BLOCK_LENGTH);
+			for(INT i = 0; i < buffLen; i += BLOCK_LENGTH) {
+				blockXor((PDWORD32) &buffer[i], (PDWORD32) myiv);
+				cipher(&buffer[i]);
+				// åŠ å¯†åçš„æ•°æ®ä½œä¸ºä¸‹ä¸€æ¬¡çš„IV
+				memcpy(myiv, &buffer[i], BLOCK_LENGTH);
+			}
+			break;
+		case STDAES_MODE_CFB: {
+			memcpy(myiv, IV, BLOCK_LENGTH);
+			for(INT i = 0; i < buffLen; i += BLOCK_LENGTH) {
+				cipher(myiv);
+				blockXor((PDWORD32) &buffer[i], (PDWORD32) myiv);
+				// åŠ å¯†åçš„æ•°æ®ä½œä¸ºä¸‹ä¸€æ¬¡çš„IV
+				memcpy(myiv, &buffer[i], BLOCK_LENGTH);
+			}
+			break;
+		}
+		case STDAES_MODE_OFB: {
+			memcpy(myiv, IV, BLOCK_LENGTH);
+			for(INT i = 0; i < buffLen; i += BLOCK_LENGTH) {
+				cipher(myiv);
+				blockXor((PDWORD32) &buffer[i], (PDWORD32) myiv);
+			}
+			break;
+		}
+		default:
+			break;
+	}
+}
+
+/////////////////////////////////////////////////////
+// AESè§£å¯†å‡½æ•°
+// è§£å¯†ä¸€æ®µæ•°æ®
+/////////////////////////////////////////////////////
+void StdAES::decrypt(LPBYTE data, INT dataLen, LPBYTE iv) {
+	BYTE bac[BLOCK_LENGTH];
+	switch(mMode) {
+		case STDAES_MODE_ECB:
+			for(INT i = 0; i < dataLen; i += BLOCK_LENGTH) {
+				invCipher(&data[i]);
+			}
+			break;
+		case STDAES_MODE_CBC: {
+			for(INT i = 0; i < dataLen; i += BLOCK_LENGTH) {
+				memcpy(bac, &data[i], BLOCK_LENGTH);
+				invCipher(&data[i]);
+				blockXor((PDWORD32) &data[i], (PDWORD32) iv);
+				memcpy(iv, bac, BLOCK_LENGTH);
+			}
+			break;
+		}
+		case STDAES_MODE_CFB: {
+			for(INT i = 0; i < dataLen; i += BLOCK_LENGTH) {
+				memcpy(bac, &data[i], BLOCK_LENGTH);
+				cipher(iv);
+				blockXor((PDWORD32) &data[i], (PDWORD32) iv);
+				memcpy(iv, bac, BLOCK_LENGTH);
+			}
+			break;
+		}
+		case STDAES_MODE_OFB:
+			encrypt(data, dataLen, iv);
+			break;
+		default:
+			break;
+	}
+}
+
+/////////////////////////////////////////////////////
+// AESæ•°æ®å—åŠ å¯†å‡½æ•°
+// åŠ å¯†ä¸€ä¸ªæ•°æ®å—
+/////////////////////////////////////////////////////
+void StdAES::cipher(LPBYTE data) {
+	if(AESNI) {
+		AESNI_crypt(data, mExpansionTable, mRounds);
+	} else {
+		addRoundKey((PDWORD32) data, 0);
+
+		for(INT i = 1; i < mRounds; i++) {
+			subBytes_ShiftRows_MixColumns(data);
+			addRoundKey((PDWORD32) data, i);
+		}
+
+		subBytes_ShiftRows(data);
+		addRoundKey((PDWORD32) data, mRounds);
+	}
+}
+
+/////////////////////////////////////////////////////
+// AESæ•°æ®å—è§£å¯†å‡½æ•°
+// è§£å¯†ä¸€ä¸ªæ•°æ®å—
+/////////////////////////////////////////////////////
+void StdAES::invCipher(LPBYTE data) {
+	if(AESNI) {
+		AESNI_invcrypt(data, mExpansionTable, mRounds);
+	} else {
+		addRoundKey((PDWORD32) data, mRounds);
+		invSubBytes_ShiftRows(data);
+
+		for(INT i = mRounds - 1; i > 0; i--) {
+			addRoundKey((PDWORD32) data, i);
+			invSubBytes_ShiftRows_MixColumns(data);
+		}
+
+		addRoundKey((PDWORD32) data, 0);
+	}
+}
+
 //////////////////////////////////////////////////////////
-// ÓëÂÖÃÜÔ¿°´Î»Òì»ò
+// ä¸è½®å¯†é’¥æŒ‰ä½å¼‚æˆ–
 //////////////////////////////////////////////////////////
 void StdAES::addRoundKey(PDWORD32 data, UINT round) {
 	data[0] ^= mExpansionTable[round * 4];
@@ -412,7 +433,7 @@ void StdAES::addRoundKey(PDWORD32 data, UINT round) {
 }
 
 //////////////////////////////////////////////////////////
-// ¸Ãº¯ÊıÊÇsubBytes¡¢shiftRowsºÍmixColumnsÕâÈı¸öº¯ÊıµÄÕûºÏ¼°ÓÅ»¯
+// è¯¥å‡½æ•°æ˜¯subBytesã€shiftRowså’ŒmixColumnsè¿™ä¸‰ä¸ªå‡½æ•°çš„æ•´åˆåŠä¼˜åŒ–
 //////////////////////////////////////////////////////////
 void StdAES::subBytes_ShiftRows_MixColumns(LPBYTE data) {
 	BYTE tmp[BLOCK_LENGTH] =
@@ -441,7 +462,7 @@ void StdAES::subBytes_ShiftRows_MixColumns(LPBYTE data) {
 }
 
 //////////////////////////////////////////////////////////
-// ¸Ãº¯ÊıÊÇsubBytes¡¢invShiftRowsºÍinvMixColumnsÕâÈı¸öº¯ÊıµÄÕûºÏ¼°ÓÅ»¯
+// è¯¥å‡½æ•°æ˜¯subBytesã€invShiftRowså’ŒinvMixColumnsè¿™ä¸‰ä¸ªå‡½æ•°çš„æ•´åˆåŠä¼˜åŒ–
 //////////////////////////////////////////////////////////
 void StdAES::invSubBytes_ShiftRows_MixColumns(LPBYTE data) {
 	BYTE tmp[BLOCK_LENGTH] =
@@ -492,14 +513,15 @@ void StdAES::invSubBytes_ShiftRows(LPBYTE data) {
 }
 
 ////////////////////////////////////////////////////////
-// ÓÃsBoxÖĞµÄÊı¾İÌæ»»Êı¾İ
+// ç”¨sBoxä¸­çš„æ•°æ®æ›¿æ¢æ•°æ®
 ////////////////////////////////////////////////////////
-void StdAES::subWord(LPBYTE c) {
+inline void StdAES::subWord(LPBYTE c) {
 	*c++ = sBox[*c];
 	*c++ = sBox[*c];
 	*c++ = sBox[*c];
 	*c = sBox[*c];
 }
+
 
 //void StdAES::subBytes(LPBYTE data) {
 //	for (INT c = 0; c < 4; c++) {
@@ -531,7 +553,7 @@ void StdAES::subWord(LPBYTE c) {
 //}
 
 ////////////////////////////////////////////////////////
-// 1, 2, 3, 4  ¡ú  2, 3, 4, 1
+// 1, 2, 3, 4  â†’  2, 3, 4, 1
 ////////////////////////////////////////////////////////
 //void StdAES::rotWord(PDWORD32 dest, PDWORD32 src) {
 //	*dest = ((*src & 0x000000FF) << 24) | (*src >> 8);

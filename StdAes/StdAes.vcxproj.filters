@@ -15,12 +15,18 @@
     </Filter>
   </ItemGroup>
   <ItemGroup>
+    <ClInclude Include="IntelAES.h">
+      <Filter>源文件</Filter>
+    </ClInclude>
     <ClInclude Include="AES.h">
-      <Filter>头文件</Filter>
+      <Filter>源文件</Filter>
     </ClInclude>
   </ItemGroup>
   <ItemGroup>
     <ClCompile Include="AES.cpp">
+      <Filter>源文件</Filter>
+    </ClCompile>
+    <ClCompile Include="IntelAES.cpp">
       <Filter>源文件</Filter>
     </ClCompile>
   </ItemGroup>
